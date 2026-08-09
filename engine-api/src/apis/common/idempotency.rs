@@ -1,0 +1,1 @@
+pub const X_IDEMPOTENCY_KEY: &str = "X-IDEMPOTENCY-KEY";
