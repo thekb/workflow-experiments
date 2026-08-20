@@ -5,15 +5,16 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header::CONTENT_TYPE},
 };
-use engine_api::apis::common::CursorSigner;
-use engine_api::apis::middleware::UserContext;
-use engine_api::apis::router::get_router;
+use engine_api::apis::http::common::CursorSigner;
+use engine_api::apis::http::middleware::UserContext;
+use engine_api::apis::http::router::get_router;
 use engine_api::{
-    apis::config::AppState,
+    apis::http::config::AppState,
     entities::config::{
         workflow::Model as Workflow, workflow_version::Model as WorkflowVersion,
     },
-    service::WorkflowService,
+    service::config::workflow_service::WorkflowService,
+    service::execution::TriggerService,
 };
 
 use serde_json::{Value, json};
@@ -34,6 +35,7 @@ async fn test_app() -> Result<(Router, PostgresConnection), String> {
 
     let state = Arc::new(AppState {
         workflows: WorkflowService::new(db.clone()),
+        triggers: TriggerService::new(db.clone(), 3),
         cursor_signer: CursorSigner::new(vec![42; 32]),
     });
     let app = get_router(state).layer(Extension(UserContext {

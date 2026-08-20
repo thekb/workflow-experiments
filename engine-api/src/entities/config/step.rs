@@ -44,78 +44,115 @@ pub struct WorkflowConfig {
     #[serde(default)]
     pub steps: Vec<Step>,
     #[serde(default = "default_max_retries")]
-    pub max_retries: u32,
+    pub max_retries: i32,
 }
 
-fn default_max_retries() -> u32 {
+fn default_max_retries() -> i32 {
     3
 }
 
-impl WorkflowConfig {
-    pub fn validate(&self) -> Result<(), String> {
-        let mut steps: HashMap<&str, &Step> = HashMap::new();
-        let mut g: HashMap<&str, Vec<&str>> = HashMap::new();
-        let mut in_degree: HashMap<&str, i32> = HashMap::new();
+struct WorkflowGraph<'a> {
+    adjacency: HashMap<&'a str, Vec<&'a str>>,
+    in_degrees: HashMap<&'a str, usize>,
+}
 
-        // check duplicates
-        for s in &self.steps {
-            if steps.contains_key(s.name.as_str()) {
+impl WorkflowConfig {
+    fn build_graph<'a>(&'a self) -> Result<WorkflowGraph<'a>, String> {
+        let mut steps = HashMap::new();
+        let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut in_degrees = HashMap::new();
+
+        for step in &self.steps {
+            if steps.insert(step.name.as_str(), step).is_some() {
                 return Err(format!(
-                    "step with name: {} already exists",
-                    &s.name
+                    "step with name {} already exists",
+                    step.name
                 ));
             }
-            steps.insert(&s.name, &s);
-            in_degree.entry(&s.name).or_insert(0);
+
+            in_degrees.insert(step.name.as_str(), 0);
         }
 
-        for s in &self.steps {
-            for parent in &s.depends_on {
-                // let parent = parent;
+        for step in &self.steps {
+            let mut dependencies = HashSet::new();
+
+            for parent in &step.depends_on {
                 if !steps.contains_key(parent.as_str()) {
-                    return Err(format!("invalid depends_on: {}", parent));
+                    return Err(format!("invalid depends_on: {parent}"));
                 }
 
-                // build the adjacency map
-                g.entry(parent.as_str())
-                    .or_insert_with(Vec::new)
-                    .push(&s.name);
+                if !dependencies.insert(parent.as_str()) {
+                    return Err(format!(
+                        "step {} depends on {} more than once",
+                        step.name, parent
+                    ));
+                }
 
-                // add indegree
-                let count = in_degree.get_mut(&s.name.as_str()).unwrap();
-                *count += 1;
+                adjacency
+                    .entry(parent.as_str())
+                    .or_default()
+                    .push(step.name.as_str());
+
+                *in_degrees
+                    .get_mut(step.name.as_str())
+                    .expect("step was registered") += 1;
             }
         }
 
-        // ensure there are no cycles
-        let mut visited: HashSet<&str> = HashSet::new();
-        let mut q: VecDeque<&str> = VecDeque::new();
+        Ok(WorkflowGraph {
+            adjacency,
+            in_degrees,
+        })
+    }
 
-        for (&key, &value) in &in_degree {
-            if value == 0 {
-                q.push_back(key);
+    fn ensure_acyclic<'a>(
+        &'a self,
+        graph: &WorkflowGraph<'a>,
+    ) -> Result<(), String> {
+        let mut remaining = graph.in_degrees.clone();
+        let mut queue = VecDeque::new();
+        let mut visited = 0;
+
+        for (&step, &degree) in &remaining {
+            if degree == 0 {
+                queue.push_back(step);
             }
         }
 
-        while let Some(v) = q.pop_front() {
-            visited.insert(v);
+        while let Some(step) = queue.pop_front() {
+            visited += 1;
 
-            if let Some(neighbors) = g.get(v) {
-                for &neighbor in neighbors {
-                    let count = in_degree.get_mut(neighbor).unwrap();
-                    *count -= 1;
-                    if *count == 0 {
-                        q.push_back(neighbor);
+            if let Some(children) = graph.adjacency.get(step) {
+                for child in children {
+                    let degree =
+                        remaining.get_mut(child).expect("child was registered");
+
+                    *degree -= 1;
+
+                    if *degree == 0 {
+                        queue.push_back(child);
                     }
                 }
             }
         }
 
-        if visited.len() != self.steps.len() {
+        if visited != self.steps.len() {
             return Err("workflow contains dependency cycle".into());
         }
 
         Ok(())
+    }
+
+    pub fn in_degrees<'a>(&'a self) -> Result<HashMap<&'a str, usize>, String> {
+        let graph = self.build_graph()?;
+        self.ensure_acyclic(&graph)?;
+
+        Ok(graph.in_degrees)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let graph = self.build_graph()?;
+        self.ensure_acyclic(&graph)
     }
 }
 

@@ -1,6 +1,6 @@
-use super::ModelPage;
 use crate::entities::config::step::WorkflowConfig;
 use crate::entities::config::{workflow, workflow_version};
+use crate::service::common::ModelPage;
 use chrono::Utc;
 use hex;
 use sea_orm::ActiveValue::Set;
@@ -75,14 +75,14 @@ pub fn generate_digest<T: Serialize>(
 }
 
 #[derive(Serialize)]
-pub struct WorkflowDigest<'a> {
+struct WorkflowDigest<'a> {
     pub tenant_id: &'a Uuid,
     pub name: &'a str,
     pub config: &'a WorkflowConfig,
 }
 
 #[derive(Serialize)]
-pub struct WorkflowVersionDigest<'a> {
+struct WorkflowVersionDigest<'a> {
     pub config: &'a WorkflowConfig,
 }
 

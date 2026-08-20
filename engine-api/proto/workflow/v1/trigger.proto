@@ -1,0 +1,77 @@
+syntax = "proto3";
+package workflow.v1;
+
+import "common/v1/uuid.proto";
+import "google/protobuf/struct.proto";
+
+message GetNextTriggerAttemptRequest {
+  uint32 num_items = 1;
+}
+
+message TriggerAttempt {
+  common.v1.Uuid trigger_id     = 1;
+  int64          attempt_number = 2;
+  common.v1.Uuid tenant_id      = 3;
+}
+
+message GetNextTriggerAttemptResponse {
+  repeated TriggerAttempt trigger_attempts = 1;
+}
+
+message ClaimTriggerAttemptRequest {
+  common.v1.Uuid trigger_id     = 1;
+  int64          attempt_number = 2;
+  common.v1.Uuid tenant_id      = 3;
+  common.v1.Uuid claimed_by     = 4;
+}
+
+message ClaimTriggerAttemptResponse {
+  TriggerPayload payload = 1;
+}
+
+enum TriggerAttemptStatus {
+  Pending    = 0;
+  InProgress = 1;
+  Success    = 2;
+  Failed     = 3;
+}
+
+message WorkflowTriggerOutput {
+  common.v1.Uuid workflow_id = 1;
+  int64          version     = 2;
+}
+
+message TriggerAttemptOutput {
+  oneof output {
+    WorkflowTriggerOutput workflow = 10;
+  }
+}
+
+message UpdateTriggerAttemptStatusRequest {
+  common.v1.Uuid       trigger_id     = 1;
+  int64                attempt_number = 2;
+  common.v1.Uuid       tenant_id      = 3;
+  common.v1.Uuid       claimed_by     = 4;
+  TriggerAttemptStatus status         = 5;
+  TriggerAttemptOutput output         = 6;
+}
+
+message UpdateTriggerAttemptStatusResponse {
+}
+
+message WorkflowPayload {
+  common.v1.Uuid         id    = 1;
+  google.protobuf.Struct extra = 2;
+}
+
+message TriggerPayload {
+  oneof payload {
+    WorkflowPayload workflow = 10;
+  }
+}
+
+service TriggerService {
+  rpc GetNextTrigger(GetNextTriggerAttemptRequest) returns (GetNextTriggerAttemptResponse);
+  rpc ClaimTriggerAttempt(ClaimTriggerAttemptRequest) returns (ClaimTriggerAttemptResponse);
+  rpc UpdateTriggerAttemptStatus(UpdateTriggerAttemptStatusRequest) returns (UpdateTriggerAttemptStatusResponse);
+}

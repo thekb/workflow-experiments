@@ -1,0 +1,7 @@
+syntax = "proto3";
+package common.v1;
+
+message Uuid {
+  uint64 high = 1;
+  uint64 low  = 2;
+}

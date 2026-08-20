@@ -1,0 +1,49 @@
+syntax = "proto3";
+package workflow.v1;
+
+import "common/v1/uuid.proto";
+
+message HttpConfig {
+  string method = 1;
+  string url    = 2;
+  string body   = 3;
+}
+
+message StepConfig {
+  oneof config {
+    HttpConfig http = 10;
+  }
+}
+
+message Step {
+  string          name       = 1;
+  StepConfig      config     = 2;
+  repeated string depends_on = 3;
+}
+
+message WorkflowConfig {
+  repeated Step steps       = 1;
+  int32         max_retries = 2;
+}
+
+message WorkflowVersion {
+  common.v1.Uuid id        = 1;
+  int64          version   = 2;
+  common.v1.Uuid tenant_id = 3;
+  WorkflowConfig config    = 4;
+  string         digest    = 5;
+}
+
+message GetWorkflowVersionRequest {
+  common.v1.Uuid workflow_id = 1;
+  common.v1.Uuid tenant_id   = 2;
+  int64          version     = 3;
+}
+
+message GetWorkflowVersionResponse {
+  WorkflowVersion workflow = 1;
+}
+
+service WorkflowConfigService {
+  rpc GetWorkflowVersion(GetWorkflowVersionRequest) returns (GetWorkflowVersionResponse);
+}

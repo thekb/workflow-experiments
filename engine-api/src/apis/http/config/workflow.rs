@@ -2,7 +2,9 @@ use crate::entities::config::{
     step::WorkflowConfig, workflow::Model as Workflow,
     workflow_version::Model as WorkflowVersion,
 };
-use crate::service::workflow_service::*;
+use crate::entities::execution::{TriggerPayload, WorkflowTrigger};
+use crate::service::config::workflow_service::*;
+use crate::service::execution::{CreateTrigger, WorkflowTriggerError};
 use axum::routing::{Router, get, post};
 
 use axum::Extension;
@@ -12,13 +14,13 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::apis::common::{
+use crate::apis::http::common::{
     APIError, APIResponse, ItemList, ListMetadata, Pagination,
     X_IDEMPOTENCY_KEY,
 };
 
 use super::state::AppState;
-use crate::apis::middleware::UserContext;
+use crate::apis::http::middleware::UserContext;
 
 pub fn get_workflow_route(state: Arc<AppState>) -> Router {
     let router = Router::new()
@@ -31,6 +33,7 @@ pub fn get_workflow_route(state: Arc<AppState>) -> Router {
             "/{workflow_id}/versions/{version_id}",
             get(get_workflow_version),
         )
+        .route("/{workflow_id}/start", post(start_workflow))
         .with_state(state);
     return router;
 }
@@ -51,6 +54,27 @@ impl From<WorkflowError> for APIError {
                 APIError::Conflict(format!(
                     "version conflict: expected: {current_version}"
                 ))
+            }
+        }
+    }
+}
+
+impl From<WorkflowTriggerError> for APIError {
+    fn from(value: WorkflowTriggerError) -> Self {
+        match value {
+            WorkflowTriggerError::BadRequest(val) => APIError::BadRequest(val),
+            WorkflowTriggerError::NotFound => {
+                APIError::NotFound("resource not found".to_owned())
+            }
+            WorkflowTriggerError::Database(val) => {
+                APIError::Internal(val.to_string())
+            }
+            WorkflowTriggerError::IdempotencyConflict => {
+                APIError::Conflict("idempotency conflict".to_owned())
+            }
+            WorkflowTriggerError::Internal(val) => APIError::Internal(val),
+            WorkflowTriggerError::StatusConflict(val) => {
+                APIError::BadRequest(val)
             }
         }
     }
@@ -238,4 +262,35 @@ async fn get_workflow_versions(
         },
         items: page.items,
     }))
+}
+
+async fn start_workflow(
+    State(state): State<Arc<AppState>>,
+    Path(workflow_id): Path<Uuid>,
+    Extension(user_context): Extension<UserContext>,
+    headers: HeaderMap,
+) -> Result<APIResponse<WorkflowTrigger>, APIError> {
+    let idempotency_key = headers
+        .get(X_IDEMPOTENCY_KEY)
+        .ok_or_else(|| {
+            APIError::BadRequest(format!("missing X-IDEMPOTENCY-KEY"))
+        })?
+        .to_str()
+        .map_err(|_| {
+            APIError::BadRequest("invalid X-IDEMPOTENCY-KEY".to_owned())
+        })?;
+
+    let trigger = state
+        .triggers
+        .create_trigger(CreateTrigger {
+            payload: TriggerPayload::Workflow {
+                id: workflow_id,
+                extra: None,
+            },
+            tenant_id: user_context.tenant_id,
+            idempotency_key: idempotency_key.to_string(),
+        })
+        .await?;
+
+    Ok(APIResponse::Ok(trigger))
 }

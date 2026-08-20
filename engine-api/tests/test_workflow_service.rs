@@ -1,7 +1,7 @@
 mod utilities;
 use engine_api::entities::config::{Http, Step, StepConfig, WorkflowConfig};
-use engine_api::service::workflow_service::WorkflowService;
-use engine_api::service::workflow_service::{
+use engine_api::service::config::workflow_service::WorkflowService;
+use engine_api::service::config::workflow_service::{
     CreateWorkflow, CreateWorkflowVersion, GetWorkflow, GetWorkflowVersion,
 };
 use uuid::Uuid;
@@ -78,7 +78,9 @@ async fn test_workflow_service_basic() -> Result<(), String> {
             },
         })
         .await
-        .map_err(|err: engine_api::service::WorkflowError| format!("{err}"))?;
+        .map_err(|err: engine_api::service::config::workflow_service::WorkflowError| {
+            format!("{err}")
+        })?;
 
     Ok(())
 }
